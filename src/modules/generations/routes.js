@@ -28,6 +28,7 @@ router.post('/batch-stream', imageUpload.array('images', 100), asyncHandler(asyn
   const userObj = { ...req.user };
   const send = (e, d) => { try { res.write(`event: ${e}\ndata: ${JSON.stringify(d)}\n\n`); } catch (x) {} };
 
+  const delayMs = req.body.delayMs ? Number(req.body.delayMs) : 0;
   for (let i = 0; i < req.files.length; i++) {
     const f = req.files[i];
     try {
@@ -35,6 +36,9 @@ router.post('/batch-stream', imageUpload.array('images', 100), asyncHandler(asyn
       send('progress', { index: i, filename: f.originalname, success: true, data: r });
     } catch (err) {
       send('progress', { index: i, filename: f.originalname, success: false, error: err.message });
+    }
+    if (delayMs > 0 && i < req.files.length - 1) {
+      await new Promise(r => setTimeout(r, delayMs));
     }
   }
   send('complete', { type: 'complete', total: req.files.length });
