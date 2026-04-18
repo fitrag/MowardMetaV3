@@ -327,17 +327,13 @@ const payloadJson = JSON.stringify({ filename: image.originalname });
 
       return { provider: { id: provider.id, name: provider.name, driver: provider.driver }, model: { id: model.id, name: model.name, code: model.model_code }, keySource, creditUsed, metadata: buildPayload(raw) };
       } catch (err) {
-        retries++;
-        console.log('[DEBUG] Retry attempt:', retries, 'error:', err.message);
-        if (retries >= MAX_RETRIES) {
-          lastErr = err;
-          const typ = classifyError(err);
-          if (typ === 'rate_limit') markKeyRateLimited(keyRec.id, tbl);
-          else markKeyError(keyRec.id, tbl);
-          console.log(`[Failover] Key ${keyRec.id} failed after ${MAX_RETRIES} retries (${typ}): ${err.message}`);
-          break;
-        }
-        await new Promise(r => setTimeout(r, 1000));
+        console.log('[DEBUG] Key error:', err.message);
+        lastErr = err;
+        const typ = classifyError(err);
+        
+        markKeyError(keyRec.id, tbl);
+        console.log(`[Key] Error with key ${keyRec.id}, stopping: ${err.message}`);
+        throw new AppError(500, err.message);
       }
     }
   }

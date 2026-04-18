@@ -1343,35 +1343,48 @@ const handleBatchGenerate = async (unprocessedOnly = false) => {
       }
 
       const nextStreamIndex = streamIndex + 1
-      if (nextStreamIndex < indicesToProcess.length) {
-        const ri = creditsInfo.value || {}
-        const remainingCredits = ri.currentCredit ?? 0
-        const hasDuration = ri.hasDuration ?? false
-        if (remainingCredits <= 0 && !hasDuration) {
-          openAddCreditModal()
-          indicesToProcess.slice(nextStreamIndex).forEach(i => {
-            if (imageStatus.value[i] === 'queue' || imageStatus.value[i] === 'delaying') {
-              imageStatus.value[i] = 'error'
-            }
-          })
-          if (countdownInterval) {
-            clearInterval(countdownInterval)
-            countdownInterval = null
-          }
-          delayCountdown.value = 0
-          batchLoading.value = false
-          currentlyProcessing.value = null
-          return
+      if (nextStreamIndex >= indicesToProcess.length) {
+        if (countdownInterval) {
+          clearInterval(countdownInterval)
+          countdownInterval = null
         }
+        delayCountdown.value = 0
+        batchLoading.value = false
+        currentlyProcessing.value = null
+        const oldHasDuration = creditsInfo.value?.hasDuration
+        userService.getCredits().then(credits => {
+          creditsInfo.value = { ...credits, hasDuration: credits.hasDuration ?? oldHasDuration }
+        }).catch(() => {})
+        return
+      }
 
-        const nextOriginalIndex = indicesToProcess[nextStreamIndex]
-        const delay = delaySeconds.value > 0 ? delaySeconds.value : 0
-        if (delay > 0) {
-          startDelayCountdown(delay, nextOriginalIndex)
-        } else {
-          imageStatus.value[nextOriginalIndex] = 'loading'
-          currentlyProcessing.value = batchFiles.value[nextOriginalIndex].name
+      const ri = creditsInfo.value || {}
+      const remainingCredits = ri.currentCredit ?? 0
+      const hasDuration = ri.hasDuration ?? false
+      if (remainingCredits <= 0 && !hasDuration) {
+        openAddCreditModal()
+        indicesToProcess.slice(nextStreamIndex).forEach(i => {
+          if (imageStatus.value[i] === 'queue' || imageStatus.value[i] === 'delaying') {
+            imageStatus.value[i] = 'error'
+          }
+        })
+        if (countdownInterval) {
+          clearInterval(countdownInterval)
+          countdownInterval = null
         }
+        delayCountdown.value = 0
+        batchLoading.value = false
+        currentlyProcessing.value = null
+        return
+      }
+
+      const nextOriginalIndex = indicesToProcess[nextStreamIndex]
+      const delay = delaySeconds.value > 0 ? delaySeconds.value : 0
+      if (delay > 0) {
+        startDelayCountdown(delay, nextOriginalIndex)
+      } else {
+        imageStatus.value[nextOriginalIndex] = 'loading'
+        currentlyProcessing.value = batchFiles.value[nextOriginalIndex].name
       }
     },
 
