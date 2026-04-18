@@ -262,16 +262,13 @@ async function generateForImage({ user, providerId, modelId, image, options = {}
   const ents = getActiveEntitlements(user.id);
   const { getTotalCredit, consumeCredit } = require('./subscriptions.service');
   const subs = db.prepare('SELECT * FROM user_subscriptions WHERE user_id = ?').all(user.id);
-  console.log('[DEBUG] User subscriptions:', JSON.stringify(subs));
   const totalCredit = getTotalCredit(user.id);
-  console.log('[DEBUG] getTotalCredit result:', totalCredit);
   let keySource = 'system', creditUsed = 0;
 
   if (totalCredit > 0) {
     keySource = 'system';
     creditUsed = 1;
-    const ok = consumeCredit(user.id, 1);
-    console.log('[Generation] Consumed 1 credit, success:', ok, 'Remaining:', getTotalCredit(user.id));
+    consumeCredit(user.id, 1);
   } else if (ents.byok) {
     keySource = 'byok';
   } else if (ents.duration) {
@@ -302,37 +299,26 @@ async function generateForImage({ user, providerId, modelId, image, options = {}
     let retries = 0;
     const MAX_RETRIES = 3;
 
-    while (retries < MAX_RETRIES) {
+while (retries < MAX_RETRIES) {
       try {
-        console.log('[DEBUG] Before invokeProvider, retry:', retries + 1);
         const raw = await invokeProvider({ prov: provider, model, apiKey, img: { ...imgData, originalname: image.originalname }, to, prompt: ANALYSIS_PROMPT });
-        console.log('[DEBUG] After invokeProvider, raw:', raw ? 'exists' : 'null');
         clearKeyHealth(keyRec.id, tbl);
-      
-const payloadJson = JSON.stringify({ filename: image.originalname });
-      const responseJson = JSON.stringify(buildPayload(raw));
-      const params = [user.id, provider.id, model.id, keySource, image.originalname, image.mimetype, creditUsed, 'success', payloadJson, responseJson, null, now];
-      console.log('[DEBUG] Params:', params.length);
-      db.prepare(`INSERT INTO metadata_generations (user_id, provider_id, provider_model_id, key_source, input_filename, mime_type, credit_used, status, request_payload, response_payload, error_message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(...params);
+       
+        const payloadJson = JSON.stringify({ filename: image.originalname });
+        const responseJson = JSON.stringify(buildPayload(raw));
+        const params = [user.id, provider.id, model.id, keySource, image.originalname, image.mimetype, creditUsed, 'success', payloadJson, responseJson, null, now];
+        db.prepare(`INSERT INTO metadata_generations (user_id, provider_id, provider_model_id, key_source, input_filename, mime_type, credit_used, status, request_payload, response_payload, error_message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(...params);
 
-      if (keySource === 'system') {
-        console.log('[DEBUG] Before UPDATE system_api_keys');
-        db.prepare('UPDATE system_api_keys SET usage_count = usage_count + 1, last_used_at = ?, updated_at = ? WHERE id = ?').run(now, now, keyRec.id);
-        console.log('[DEBUG] After UPDATE system_api_keys');
-      }
+        if (keySource === 'system') {
+          db.prepare('UPDATE system_api_keys SET usage_count = usage_count + 1, last_used_at = ?, updated_at = ? WHERE id = ?').run(now, now, keyRec.id);
+        }
 
-      console.log('[DEBUG] Before logAudit');
-      logAudit({ actorUserId: user.id, action: 'generation.created', entityType: 'metadata_generation', payload: { providerId: provider.id, modelId: model.id, keySource, keyId: keyRec.id } });
-      console.log('[DEBUG] About to return');
+        logAudit({ actorUserId: user.id, action: 'generation.created', entityType: 'metadata_generation', payload: { providerId: provider.id, modelId: model.id, keySource, keyId: keyRec.id } });
 
-      return { provider: { id: provider.id, name: provider.name, driver: provider.driver }, model: { id: model.id, name: model.name, code: model.model_code }, keySource, creditUsed, metadata: buildPayload(raw) };
+        return { provider: { id: provider.id, name: provider.name, driver: provider.driver }, model: { id: model.id, name: model.name, code: model.model_code }, keySource, creditUsed, metadata: buildPayload(raw) };
       } catch (err) {
-        console.log('[DEBUG] Key error:', err.message);
         lastErr = err;
-        const typ = classifyError(err);
-        
         markKeyError(keyRec.id, tbl);
-        console.log(`[Key] Error with key ${keyRec.id}, stopping: ${err.message}`);
         throw new AppError(500, err.message);
       }
     }

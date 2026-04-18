@@ -95,7 +95,7 @@ function getTotalCredit(userId) {
     total += Math.max(0, remaining);
   }
 
-  console.log('[Credit] User', userId, 'total credit:', total);
+  
   return total;
 }
 
@@ -137,12 +137,12 @@ function consumeCredit(userId, amount) {
       .run(toConsume, now, userId);
     
     remaining -= toConsume;
-    console.log('[Credit] Consumed', toConsume, 'from subscription', pkg.id);
+    
   }
 
   const success = remaining === 0;
   if (!success) {
-    console.log('[Credit] Warning: Could not consume full amount. Remaining:', remaining);
+    
   }
   return success;
 }
@@ -155,7 +155,7 @@ function addCredit(userId, amount, subscriptionId = null) {
   db.prepare('UPDATE users SET current_credit = current_credit + ?, updated_at = ? WHERE id = ?')
     .run(amount, now, userId);
   
-  console.log('[Credit] Added', amount, 'credit to user', userId);
+  
   return true;
 }
 
