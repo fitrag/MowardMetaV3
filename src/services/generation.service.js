@@ -202,6 +202,7 @@ async function invokeProvider({ prov, model, apiKey, img, to, prompt }) {
   if (prov.driver === 'kie') return callKie({ apiKey, img, to, prompt, mCode: mc });
   if (prov.driver === 'cloudflare') return callCloudflare({ apiKey, prov, img, to, prompt, mCode: mc });
   if (prov.driver === 'openai') return callOpenAI({ apiKey, prov, img, to, prompt, mCode: mc });
+  if (prov.driver === 'mistral') return callMistral({ apiKey, img, to, prompt, mCode: mc });
   throw new AppError(400, `Driver ${prov.driver} not supported`);
 }
 
@@ -241,14 +242,24 @@ async function generateForImage({ user, providerId, modelId, image, options = {}
   const provider = getProvider(providerId);
   const model = getProviderModel(provider.id, modelId);
   const ents = getActiveEntitlements(user.id);
+  const { getTotalCredit, consumeCredit } = require('./subscriptions.service');
+  const subs = db.prepare('SELECT * FROM user_subscriptions WHERE user_id = ?').all(user.id);
+  console.log('[DEBUG] User subscriptions:', JSON.stringify(subs));
+  const totalCredit = getTotalCredit(user.id);
+  console.log('[DEBUG] getTotalCredit result:', totalCredit);
   let keySource = 'system', creditUsed = 0;
 
-  if (ents.byok) keySource = 'byok';
-  else if (ents.duration) keySource = 'system';
-  else {
-    if (user.current_credit < 1) throw new AppError(400, 'Insufficient credit');
+  if (totalCredit > 0) {
     keySource = 'system';
     creditUsed = 1;
+    const ok = consumeCredit(user.id, 1);
+    console.log('[Generation] Consumed 1 credit, success:', ok, 'Remaining:', getTotalCredit(user.id));
+  } else if (ents.byok) {
+    keySource = 'byok';
+  } else if (ents.duration) {
+    keySource = 'system';
+  } else {
+    throw new AppError(400, 'Insufficient credit. Please purchase a credit package or subscription.');
   }
 
   const to = getSetting('generation.request_timeout_ms', DEFAULT_TIMEOUT_MS);
@@ -262,8 +273,8 @@ async function generateForImage({ user, providerId, modelId, image, options = {}
     const keyRec = keySource === 'byok' ? pickUserApiKey(user.id, provider.id) : pickSystemApiKey(provider.id);
     if (!keyRec || tried.has(keyRec.id)) {
       if (creditUsed > 0) {
-        db.prepare('UPDATE users SET current_credit = current_credit + ?, updated_at = ? WHERE id = ?').run(creditUsed, new Date().toISOString(), user.id);
-        user.current_credit += creditUsed;
+        const { refundCredit } = require('./subscriptions.service');
+        refundCredit(user.id, creditUsed);
       }
       throw new AppError(502, lastErr ? `All keys failed: ${lastErr.message}` : 'No key available');
     }
@@ -277,21 +288,11 @@ try {
       console.log('[DEBUG] After invokeProvider, raw:', raw ? 'exists' : 'null');
       clearKeyHealth(keyRec.id, tbl);
       
-      const payloadJson = JSON.stringify({ filename: image.originalname });
+const payloadJson = JSON.stringify({ filename: image.originalname });
       const responseJson = JSON.stringify(buildPayload(raw));
-      console.log('[DEBUG] Before INSERT metadata_generations');
-      
-      db.prepare(`INSERT INTO metadata_generations (user_id, provider_id, provider_model_id, key_source, input_filename, mime_type, credit_used, status, request_payload, response_payload, error_message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        user.id, provider.id, model.id, keySource, image.originalname, image.mimetype, creditUsed, 'success', payloadJson, responseJson, null, now
-      );
-      console.log('[DEBUG] After INSERT metadata_generations');
-
-      if (creditUsed > 0) {
-        console.log('[DEBUG] Before UPDATE users credit');
-        db.prepare('UPDATE users SET current_credit = current_credit - ?, updated_at = ? WHERE id = ?').run(creditUsed, now, user.id);
-        console.log('[DEBUG] After UPDATE users credit');
-        user.current_credit -= creditUsed;
-      }
+      const params = [user.id, provider.id, model.id, keySource, image.originalname, image.mimetype, creditUsed, 'success', payloadJson, responseJson, null, now];
+      console.log('[DEBUG] Params:', params.length);
+      db.prepare(`INSERT INTO metadata_generations (user_id, provider_id, provider_model_id, key_source, input_filename, mime_type, credit_used, status, request_payload, response_payload, error_message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(...params);
 
       if (keySource === 'system') {
         console.log('[DEBUG] Before UPDATE system_api_keys');

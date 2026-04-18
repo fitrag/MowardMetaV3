@@ -58,6 +58,23 @@ async function start() {
     
     app.listen(env.port || 3005, () => {
       console.log(`[Server] Running on port ${env.port || 3005}`);
+      
+      // Check expired subscriptions on startup and every hour
+      const { checkExpiredSubscriptions } = require('./services/subscriptions.service');
+      try {
+        const result = checkExpiredSubscriptions();
+        console.log(`[Subscription] Startup check: ${result.checked} expired, ${result.updated} downgraded`);
+      } catch (e) {
+        console.error('[Subscription] Check error:', e.message);
+      }
+      
+      setInterval(() => {
+        try {
+          checkExpiredSubscriptions();
+        } catch (e) {
+          console.error('[Subscription] Check error:', e.message);
+        }
+      }, 60 * 60 * 1000);
     });
   } catch (e) {
     console.error('[Server] Failed to start:', e);

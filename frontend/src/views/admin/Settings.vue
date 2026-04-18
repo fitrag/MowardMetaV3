@@ -51,10 +51,10 @@
               ></textarea>
               <select
                 v-else-if="setting.valueType === 'boolean'"
-                v-model="setting.editValue"
+                :value="setting.editValue"
+                @change="setting.editValue = $event.target.value === 'true'; markChanged(setting)"
                 class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 bg-white"
                 :class="{ 'border-amber-300 bg-amber-50': setting.editValue !== setting.originalValue }"
-                @change="markChanged(setting)"
               >
                 <option value="true">Enabled</option>
                 <option value="false">Disabled</option>
@@ -99,31 +99,57 @@ const hasChanges = computed(() => {
 })
 
 const settingGroups = computed(() => {
+  console.log('[Settings] Computing groups from:', settings.value)
   const groups = {}
   for (const s of settings.value) {
-    const rawKey = s.settingKey || s.key || 'other'
-    const groupKey = s.groupKey || rawKey.split('_')[0]
+    // Use groupKey if available, otherwise extract from key
+    let groupKey = s.groupKey || 'other'
+    if (!groupKey || groupKey === 'other') {
+      const rawKey = s.settingKey || s.key || ''
+      groupKey = rawKey.split('.')[0] || 'other'
+    }
+    
     const label = {
       payments: 'Payments',
-      generation: 'Generation',
+      generation: 'Generation', 
       registration: 'Registration',
       general: 'General',
       app: 'Application',
     }[groupKey] || groupKey.charAt(0).toUpperCase() + groupKey.slice(1)
+    
     if (!groups[label]) groups[label] = { label, items: [] }
     groups[label].items.push(s)
   }
+  console.log('[Settings] Grouped:', groups)
   return Object.values(groups)
 })
 
 onMounted(async () => {
   try {
-    const data = await adminService.getSettings()
-    settings.value = data.map(s => ({
-      ...s,
-      editValue: s.value,
-      originalValue: s.value
-    }))
+    const response = await adminService.getSettings()
+    console.log('[Settings] Response:', response)
+    
+    // Backend returns grouped format: [{ group: "general", settings: [...] }]
+    const rawSettings = []
+    for (const group of response) {
+      if (group.settings) {
+        for (const s of group.settings) {
+          rawSettings.push({
+            id: s.id,
+            groupKey: group.group,
+            settingKey: s.key || s.settingKey,
+            value: s.value,
+            editValue: s.value,
+            originalValue: s.value,
+            valueType: s.type || s.valueType,
+            isEditable: s.isEditable,
+            description: s.description
+          })
+        }
+      }
+    }
+    console.log('[Settings] Processed:', rawSettings)
+    settings.value = rawSettings
   } catch (error) {
     console.error('Failed to load settings:', error)
   } finally {
@@ -132,7 +158,10 @@ onMounted(async () => {
 })
 
 const formatLabel = (key) => {
-  return key
+  if (!key) return ''
+  // Handle keys like "general.app_name" -> "App Name"
+  const cleanKey = key.toString().split('.').pop() || key
+  return cleanKey
     .split('_')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
@@ -147,9 +176,35 @@ const handleSaveAll = async () => {
   submitting.value = true
   try {
     const changed = settings.value.filter(s => s.editValue !== s.originalValue)
-    await Promise.all(changed.map(s => adminService.updateSetting(s.settingKey || s.key, s.editValue)))
-    const data = await adminService.getSettings()
-    settings.value = data.map(s => ({ ...s, editValue: s.value, originalValue: s.value }))
+    console.log('[Settings] Saving:', changed)
+    
+    for (const s of changed) {
+      const key = s.settingKey || s.key || s.groupKey + '.' + s.settingKey
+      console.log('[Settings] Saving key:', key, 'value:', s.editValue)
+      await adminService.updateSetting(key, s.editValue)
+    }
+    
+    // Reload settings
+    const response = await adminService.getSettings()
+    const rawSettings = []
+    for (const group of response) {
+      if (group.settings) {
+        for (const s of group.settings) {
+          rawSettings.push({
+            id: s.id,
+            groupKey: group.group,
+            settingKey: s.key || s.settingKey,
+            value: s.value,
+            editValue: s.value,
+            originalValue: s.value,
+            valueType: s.type || s.valueType,
+            isEditable: s.isEditable,
+            description: s.description
+          })
+        }
+      }
+    }
+    settings.value = rawSettings
     alert('Settings saved successfully')
   } catch (error) {
     console.error('Failed to save settings:', error)

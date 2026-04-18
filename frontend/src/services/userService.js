@@ -232,6 +232,7 @@ export const userService = {
 
   async getCredits() {
     const response = await api.get('/user/credits')
+    console.log('[userService.getCredits] Data:', JSON.stringify(response.data.data))
     return response.data.data
   },
 

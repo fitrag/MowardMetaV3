@@ -61,6 +61,22 @@ function runMigrations() {
       }
     }
     
+    // Check user_subscriptions table - add credit_used column
+    const subResult = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='user_subscriptions'");
+    if (subResult.length > 0 && subResult[0].values.length > 0) {
+      const subCols = db.exec("PRAGMA table_info(user_subscriptions)");
+      if (subCols.length > 0) {
+        const colNames = subCols[0].values.map(v => v[1]);
+        if (!colNames.includes('credit_used')) {
+          db.run("ALTER TABLE user_subscriptions ADD COLUMN credit_used INTEGER DEFAULT 0");
+          console.log('[Migration] Added credit_used column to user_subscriptions');
+        }
+        if (!colNames.includes('auto_renew')) {
+          db.run("ALTER TABLE user_subscriptions ADD COLUMN auto_renew INTEGER DEFAULT 0");
+        }
+      }
+    }
+    
     // Check user_byok_keys table
     const byokResult = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='user_byok_keys'");
     if (byokResult.length > 0 && byokResult[0].values.length > 0) {

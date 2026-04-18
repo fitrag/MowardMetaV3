@@ -25,8 +25,18 @@ router.get('/packages', asyncHandler(async (req, res) => {
 
 // Credits
 router.get('/credits', asyncHandler(async (req, res) => {
-  const user = db.prepare('SELECT current_credit FROM users WHERE id = ?').get(req.user.id);
-  res.json({ success: true, data: { currentCredit: user?.current_credit || 0 } });
+  try {
+    const { getTotalCredit, getActiveSubscriptions } = require('../../services/subscriptions.service');
+    const subCredit = getTotalCredit(req.user.id);
+    const subs = getActiveSubscriptions(req.user.id);
+    const hasDuration = subs.some(s => s.package_type === 'duration' || s.package_type === 'hybrid');
+    const data = { currentCredit: subCredit, hasDuration, _debug: { subs: subs.map(s => s.package_type) } };
+    console.log('[creditsAPI] Response:', JSON.stringify(data));
+    res.json({ success: true, data });
+  } catch(e) {
+    console.error('[credits] Error:', e.message, e.stack);
+    res.json({ success: true, data: { currentCredit: 0, hasDuration: false } });
+  }
 }));
 
 // Subscription

@@ -86,11 +86,30 @@ function seed() {
 
   // Settings
   const ss = [
+    // General
     { g: 'general', k: 'general.app_name', t: 'string', v: 'ShowModel', d: 'ShowModel', desc: 'App name', o: 1, pub: false },
     { g: 'general', k: 'general.app_description', t: 'string', v: 'AI Adobe Stock metadata', d: 'AI Adobe Stock metadata', desc: 'App desc', o: 2, pub: false },
-    { g: 'generation', k: 'generation.default_provider_id', t: 'number', v: '1', d: '1', desc: 'Default provider', o: 3, pub: false },
-    { g: 'generation', k: 'generation.request_timeout_ms', t: 'number', v: '60000', d: '60000', desc: 'Timeout ms', o: 4, pub: false },
-    { g: 'generation', k: 'generation.max_batch_items', t: 'number', v: '5', d: '5', desc: 'Max batch', o: 5, pub: false },
+    { g: 'general', k: 'general.support_email', t: 'string', v: 'support@showmodel.com', d: 'support@showmodel.com', desc: 'Support email', o: 3, pub: true },
+    
+    // Registration
+    { g: 'registration', k: 'registration.free_credit_on_signup', t: 'number', v: '5', d: '5', desc: 'Free credits on signup', o: 10, pub: false },
+    { g: 'registration', k: 'registration.require_email_verification', t: 'boolean', v: 'false', d: 'false', desc: 'Require email verification', o: 11, pub: false },
+    
+    // Generation
+    { g: 'generation', k: 'generation.default_provider_id', t: 'number', v: '1', d: '1', desc: 'Default provider', o: 20, pub: false },
+    { g: 'generation', k: 'generation.request_timeout_ms', t: 'number', v: '60000', d: '60000', desc: 'Request timeout (ms)', o: 21, pub: false },
+    { g: 'generation', k: 'generation.max_batch_items', t: 'number', v: '5', d: '5', desc: 'Max batch items', o: 22, pub: false },
+    { g: 'generation', k: 'generation.max_image_size_mb', t: 'number', v: '10', d: '10', desc: 'Max image size (MB)', o: 23, pub: false },
+    { g: 'generation', k: 'generation.daily_credit_limit', t: 'number', v: '100', d: '100', desc: 'Daily credit limit for free users', o: 24, pub: false },
+    
+    // Payments
+    { g: 'payments', k: 'payments.min_deposit', t: 'number', v: '10000', d: '10000', desc: 'Minimum deposit (IDR)', o: 30, pub: false },
+    { g: 'payments', k: 'payments.max_deposit', t: 'number', v: '100000000', d: '100000000', desc: 'Maximum deposit (IDR)', o: 31, pub: false },
+    { g: 'payments', k: 'payments.auto_approve', t: 'boolean', v: 'false', d: 'false', desc: 'Auto-approve payments', o: 32, pub: false },
+    
+    // API Keys
+    { g: 'api', k: 'api.rate_limit_per_minute', t: 'number', v: '10', d: '10', desc: 'Rate limit per minute', o: 40, pub: false },
+    { g: 'api', k: 'api.max_retries', t: 'number', v: '3', d: '3', desc: 'Max API retries', o: 41, pub: false },
   ];
   for (const s of ss) {
     db.prepare('INSERT INTO app_settings (group_key, setting_key, value_type, value_text, default_value_text, is_public, is_editable, description, validation_rules, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(s.g, s.k, s.t, s.v, s.d, s.pub ? 1 : 0, 1, s.desc, null, s.o, now, now);

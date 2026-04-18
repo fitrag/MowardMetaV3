@@ -1097,13 +1097,9 @@ const handleGenerate = async () => {
   if (!selectedFile.value) return
 
   const credits = (creditsInfo.value?.currentCredit || 0)
-  if (credits <= 0) {
-    const accountType = creditsInfo.value?.accountType || 'free'
-    if (accountType === 'free') {
-      await openSubscribeModal()
-    } else {
-      await openAddCreditModal()
-    }
+  const hasDuration = creditsInfo.value?.hasDuration || false
+  if (credits <= 0 && !hasDuration) {
+    await openAddCreditModal()
     return
   }
 
@@ -1126,11 +1122,12 @@ const handleGenerate = async () => {
     const response = await userService.generateFromImage(formData)
     result.value = response
     const creditUsed = response?.creditUsed || 1
+    const oldHasDuration = creditsInfo.value?.hasDuration
     if (creditsInfo.value) {
       creditsInfo.value.currentCredit = Math.max(0, (creditsInfo.value.currentCredit || 0) - creditUsed)
     }
     userService.getCredits().then(c => {
-      creditsInfo.value = c
+      creditsInfo.value = { ...c, hasDuration: c.hasDuration ?? oldHasDuration }
     }).catch(() => {})
   } catch (error) {
     console.error('Generation failed:', error)
@@ -1255,14 +1252,11 @@ const clearBatchFiles = () => {
 const handleBatchGenerate = async (unprocessedOnly = false) => {
   if (batchFiles.value.length === 0) return
 
-  const credits = (creditsInfo.value?.currentCredit || 0)
-  if (credits <= 0) {
-    const accountType = creditsInfo.value?.accountType || 'free'
-    if (accountType === 'free') {
-      await openSubscribeModal()
-    } else {
-      await openAddCreditModal()
-    }
+  const ci = creditsInfo.value || {}
+  const credits = ci.currentCredit ?? 0
+  const hasDuration = ci.hasDuration ?? false
+  if (credits <= 0 && !hasDuration) {
+    await openAddCreditModal()
     return
   }
 
@@ -1350,15 +1344,11 @@ const handleBatchGenerate = async (unprocessedOnly = false) => {
 
       const nextStreamIndex = streamIndex + 1
       if (nextStreamIndex < indicesToProcess.length) {
-        const remainingCredits = creditsInfo.value?.currentCredit || 0
-        if (remainingCredits <= 0) {
-          creditsInfo.value = creditsInfo.value || { currentCredit: 0, accountType: 'free' }
-          const accountType = creditsInfo.value?.accountType || 'free'
-          if (accountType === 'free') {
-            openSubscribeModal()
-          } else {
-            openAddCreditModal()
-          }
+        const ri = creditsInfo.value || {}
+        const remainingCredits = ri.currentCredit ?? 0
+        const hasDuration = ri.hasDuration ?? false
+        if (remainingCredits <= 0 && !hasDuration) {
+          openAddCreditModal()
           indicesToProcess.slice(nextStreamIndex).forEach(i => {
             if (imageStatus.value[i] === 'queue' || imageStatus.value[i] === 'delaying') {
               imageStatus.value[i] = 'error'
@@ -1388,8 +1378,9 @@ const handleBatchGenerate = async (unprocessedOnly = false) => {
     () => {
       batchLoading.value = false
       currentlyProcessing.value = null
+      const oldHasDuration = creditsInfo.value?.hasDuration
       userService.getCredits().then(credits => {
-        creditsInfo.value = credits
+        creditsInfo.value = { ...credits, hasDuration: credits.hasDuration ?? oldHasDuration }
       }).catch(err => console.warn('[Batch] Failed to refresh credits:', err))
     },
 

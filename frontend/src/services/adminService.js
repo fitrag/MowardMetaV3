@@ -236,7 +236,7 @@ export const adminService = {
   },
 
   async updateSetting(key, value) {
-    const response = await api.put(`/admin/settings/${key}`, { value })
+    const response = await api.patch(`/admin/settings/${key}`, { value })
     return response.data.data
   },
 

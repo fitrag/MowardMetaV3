@@ -45,6 +45,8 @@ router.get('/providers/:id/models', asyncHandler(async (req, res) => {
 router.post('/providers/:id/models', asyncHandler(async (req, res) => {
   const { name, modelCode, isDefault } = req.body;
   if (!name || !modelCode) throw new AppError(400, 'Required');
+  const existing = db.prepare('SELECT id FROM provider_models WHERE provider_id = ? AND model_code = ?').get(req.params.id, modelCode);
+  if (existing) throw new AppError(400, 'Model already exists');
   if (isDefault) db.prepare('UPDATE provider_models SET is_default = 0 WHERE provider_id = ?').run(req.params.id);
   const now = new Date().toISOString();
   const result = db.prepare('INSERT INTO provider_models (provider_id, name, model_code, is_default, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(req.params.id, name, modelCode, isDefault ? 1 : 0, 'active', now, now);
@@ -67,10 +69,17 @@ router.delete('/provider-models/:id', asyncHandler(async (req, res) => {
 
 router.post('/providers/:id/models/fetch', asyncHandler(async (req, res) => {
   const { fetchModelsFromProvider } = require('../../services/generation.service');
-  const p = db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(req.params.id);
+  const providerId = parseInt(req.params.id);
+  
+  const p = db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(providerId);
   if (!p) throw new AppError(404, 'Provider not found');
+  
   const key = db.prepare('SELECT encrypted_key FROM system_api_keys WHERE provider_id = ? AND status = ? ORDER BY id').get(p.id, 'active');
-  if (!key) throw new AppError(400, 'No API key for provider');
+  if (!key) {
+    res.json({ success: true, data: [], message: 'No API key configured for this provider' });
+    return;
+  }
+  
   const { decryptText } = require('../../lib/crypto');
   const apiKey = decryptText(key.encrypted_key);
   try {
@@ -413,22 +422,48 @@ router.patch('/orders/:id/approve', asyncHandler(async (req, res) => {
   
   const now = new Date().toISOString();
   let expiresAt = null;
+  let creditToAdd = 0;
   
-  if (pkg.package_type === 'duration' || pkg.package_type === 'byok') {
+  // Calculate expiration and credit based on package type
+  if (pkg.package_type === 'credit') {
+    creditToAdd = pkg.credit_amount || 0;
+    // Credit packages expire in 1 year
+    expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  } else if (pkg.package_type === 'duration') {
+    // Duration packages: 1-12 months
+    expiresAt = new Date(Date.now() + (pkg.duration_days || 30) * 24 * 60 * 60 * 1000).toISOString();
+  } else if (pkg.package_type === 'byok') {
+    // BYOK: duration + brings own API key
+    expiresAt = new Date(Date.now() + (pkg.duration_days || 30) * 24 * 60 * 60 * 1000).toISOString();
+  } else if (pkg.package_type === 'hybrid') {
+    // Hybrid: credit + duration
+    creditToAdd = pkg.credit_amount || 0;
     expiresAt = new Date(Date.now() + (pkg.duration_days || 30) * 24 * 60 * 60 * 1000).toISOString();
   }
   
-  db.prepare('INSERT INTO user_subscriptions (user_id, package_id, package_type, status, started_at, expires_at, credit_granted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(o.user_id, o.package_id, pkg.package_type, 'active', now, expiresAt, pkg.credit_amount || 0, now, now);
+  // Create subscription record
+  db.prepare(`
+    INSERT INTO user_subscriptions 
+    (user_id, package_id, package_type, status, started_at, expires_at, credit_granted, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(o.user_id, o.package_id, pkg.package_type, 'active', now, expiresAt, creditToAdd, now, now);
   
-  if (pkg.package_type === 'credit') {
-    db.prepare('UPDATE users SET current_credit = current_credit + ?, updated_at = ? WHERE id = ?').run(pkg.credit_amount, now, o.user_id);
+  // Add credit if any
+  if (creditToAdd > 0) {
+    db.prepare('UPDATE users SET current_credit = current_credit + ?, updated_at = ? WHERE id = ?')
+      .run(creditToAdd, now, o.user_id);
   }
   
-  if (pkg.package_type === 'duration' || pkg.package_type === 'byok') {
-    db.prepare('UPDATE users SET account_type = ?, updated_at = ? WHERE id = ?').run('subscription', now, o.user_id);
+  // Update user to subscription account type (for any non-credit package)
+  if (pkg.package_type !== 'credit') {
+    db.prepare('UPDATE users SET account_type = ?, updated_at = ? WHERE id = ?')
+      .run('subscription', now, o.user_id);
   }
   
-  db.prepare('UPDATE orders SET status = ?, approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ?').run('approved', req.user.id, now, now, req.params.id);
+  // Update order status
+  db.prepare('UPDATE orders SET status = ?, approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ?')
+    .run('approved', req.user.id, now, now, req.params.id);
+  
   res.json({ success: true });
 }));
 
@@ -532,6 +567,7 @@ router.get('/settings', asyncHandler(async (req, res) => {
 }));
 
 router.patch('/settings/:key', asyncHandler(async (req, res) => {
+  console.log('[Admin] Updating setting:', req.params.key, 'value:', req.body.value);
   const { updateSetting } = require('../../services/settings.service');
   const { value } = req.body;
   if (value === undefined) throw new AppError(400, 'value required');
