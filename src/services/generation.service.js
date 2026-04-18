@@ -196,6 +196,24 @@ async function callOpenAI({ apiKey, prov, img, to = DEFAULT_TIMEOUT_MS, prompt =
   } finally { clearTimeout(tid); }
 }
 
+async function callMistral({ apiKey, img, to = DEFAULT_TIMEOUT_MS, prompt = ANALYSIS_PROMPT, mCode }) {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), to);
+  try {
+    const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: mCode || 'pixtral-12b-240914', messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: `data:${img.mimetype};base64,${img.buffer.toString('base64')}` }] }], temperature: 0.1 }),
+      signal: ctrl.signal
+    });
+    if (!r.ok) throw new AppError(502, `Mistral error: ${r.status}`);
+    const d = await r.json();
+    return safeParseJson(extractJson(d.choices?.[0]?.message?.content || ''));
+  } catch (e) {
+    if (e.name === 'AbortError') throw new AppError(504, 'Request timed out');
+    throw new AppError(500, `Mistral failed: ${e.message}`);
+  } finally { clearTimeout(tid); }
+}
+
 async function invokeProvider({ prov, model, apiKey, img, to, prompt }) {
   const mc = model.model_code;
   if (prov.driver === 'gemini') return callGemini({ apiKey, img, to, prompt, mCode: mc });
@@ -281,12 +299,15 @@ async function generateForImage({ user, providerId, modelId, image, options = {}
     tried.add(keyRec.id);
     const apiKey = decryptText(keyRec.encrypted_key);
     const now = new Date().toISOString();
+    let retries = 0;
+    const MAX_RETRIES = 3;
 
-try {
-      console.log('[DEBUG] Before invokeProvider');
-      const raw = await invokeProvider({ prov: provider, model, apiKey, img: { ...imgData, originalname: image.originalname }, to, prompt: ANALYSIS_PROMPT });
-      console.log('[DEBUG] After invokeProvider, raw:', raw ? 'exists' : 'null');
-      clearKeyHealth(keyRec.id, tbl);
+    while (retries < MAX_RETRIES) {
+      try {
+        console.log('[DEBUG] Before invokeProvider, retry:', retries + 1);
+        const raw = await invokeProvider({ prov: provider, model, apiKey, img: { ...imgData, originalname: image.originalname }, to, prompt: ANALYSIS_PROMPT });
+        console.log('[DEBUG] After invokeProvider, raw:', raw ? 'exists' : 'null');
+        clearKeyHealth(keyRec.id, tbl);
       
 const payloadJson = JSON.stringify({ filename: image.originalname });
       const responseJson = JSON.stringify(buildPayload(raw));
@@ -305,13 +326,19 @@ const payloadJson = JSON.stringify({ filename: image.originalname });
       console.log('[DEBUG] About to return');
 
       return { provider: { id: provider.id, name: provider.name, driver: provider.driver }, model: { id: model.id, name: model.name, code: model.model_code }, keySource, creditUsed, metadata: buildPayload(raw) };
-    } catch (err) {
-      console.log('[DEBUG] In catch block, error:', err.message);
-      lastErr = err;
-      const typ = classifyError(err);
-      if (typ === 'rate_limit') markKeyRateLimited(keyRec.id, tbl);
-      else markKeyError(keyRec.id, tbl);
-      console.log(`[Failover] Key ${keyRec.id} failed (${typ}): ${err.message}`);
+      } catch (err) {
+        retries++;
+        console.log('[DEBUG] Retry attempt:', retries, 'error:', err.message);
+        if (retries >= MAX_RETRIES) {
+          lastErr = err;
+          const typ = classifyError(err);
+          if (typ === 'rate_limit') markKeyRateLimited(keyRec.id, tbl);
+          else markKeyError(keyRec.id, tbl);
+          console.log(`[Failover] Key ${keyRec.id} failed after ${MAX_RETRIES} retries (${typ}): ${err.message}`);
+          break;
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
   }
 }
