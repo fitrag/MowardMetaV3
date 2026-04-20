@@ -952,7 +952,7 @@ const batchPlatforms = getPlatforms()
 
 // Draggable FAB state
 const fabX = ref(window.innerWidth - 160)
-const fabY = ref(100)
+const fabY = ref(window.innerHeight - 80)
 const dragging = ref(false)
 const dragOffsetX = ref(0)
 const dragOffsetY = ref(0)

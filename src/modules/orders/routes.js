@@ -26,6 +26,8 @@ router.get('/', asyncHandler(async (req, res) => {
     currency: o.currency,
     createdAt: o.created_at,
     updatedAt: o.updated_at,
+    packageType: o.package_type,
+    packageName: o.package_name,
     package: o.package_name ? {
       name: o.package_name,
       packageType: o.package_type,
