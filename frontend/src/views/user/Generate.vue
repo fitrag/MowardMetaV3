@@ -1131,9 +1131,14 @@ const handleGenerate = async () => {
     }).catch(() => {})
   } catch (error) {
     console.error('Generation failed:', error)
+    const errMsg = error.response?.data?.error || error.message || 'Unknown error occurred'
+    if (errMsg.toLowerCase().includes('insufficient credit')) {
+      await openAddCreditModal()
+      return
+    }
     result.value = {
       status: 'failed',
-      errorMessage: error.response?.data?.error || error.message || 'Unknown error occurred'
+      errorMessage: errMsg
     }
   } finally {
     loading.value = false
@@ -1406,7 +1411,12 @@ const handleBatchGenerate = async (unprocessedOnly = false) => {
           imageStatus.value[i] = 'error'
         }
       })
-      alert('Batch generation failed: ' + error.message)
+      const errMsg = error.message || ''
+      if (errMsg.toLowerCase().includes('insufficient credit')) {
+        openAddCreditModal()
+        return
+      }
+      alert('Batch generation failed: ' + errMsg)
     }
   )
 }
