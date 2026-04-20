@@ -92,10 +92,13 @@ function registerUser({ name, email, password, role = 'user' }) {
     throw new Error('Email already registered');
   }
 
+  const { getSetting } = require('./settings.service');
+  const freeCredit = getSetting('registration.free_credit_on_signup', 5);
+
   const now = new Date().toISOString();
   const passwordHash = hashPassword(password);
   const result = db.prepare('INSERT INTO users (name, email, password_hash, role, status, account_type, current_credit, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
-    name, email, passwordHash, role, 'active', 'free', 0, now, now
+    name, email, passwordHash, role, 'active', 'free', freeCredit, now, now
   );
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);

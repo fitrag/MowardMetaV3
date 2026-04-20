@@ -27,10 +27,12 @@ router.get('/packages', asyncHandler(async (req, res) => {
 router.get('/credits', asyncHandler(async (req, res) => {
   try {
     const { getTotalCredit, getActiveSubscriptions } = require('../../services/subscriptions.service');
+    const user = db.prepare('SELECT id, current_credit, account_type FROM users WHERE id = ?').get(req.user.id);
     const subCredit = getTotalCredit(req.user.id);
     const subs = getActiveSubscriptions(req.user.id);
     const hasDuration = subs.some(s => s.package_type === 'duration' || s.package_type === 'hybrid');
-    const data = { currentCredit: subCredit, hasDuration, _debug: { subs: subs.map(s => s.package_type) } };
+    const totalCredit = (user?.current_credit || 0) + subCredit;
+    const data = { currentCredit: totalCredit, hasDuration, accountType: user?.account_type || 'free' };
     console.log('[creditsAPI] Response:', JSON.stringify(data));
     res.json({ success: true, data });
   } catch(e) {
