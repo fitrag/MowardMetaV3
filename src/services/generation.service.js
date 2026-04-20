@@ -260,15 +260,20 @@ async function generateForImage({ user, providerId, modelId, image, options = {}
   const provider = getProvider(providerId);
   const model = getProviderModel(provider.id, modelId);
   const ents = getActiveEntitlements(user.id);
-  const { getTotalCredit, consumeCredit } = require('./subscriptions.service');
-  const subs = db.prepare('SELECT * FROM user_subscriptions WHERE user_id = ?').all(user.id);
-  const totalCredit = getTotalCredit(user.id);
+  const { getTotalCredit, consumeCredit, addCredit } = require('./subscriptions.service');
+  const userCredit = db.prepare('SELECT current_credit FROM users WHERE id = ?').get(user.id);
+  const subCredit = getTotalCredit(user.id);
+  const totalCredit = (userCredit?.current_credit || 0) + subCredit;
   let keySource = 'system', creditUsed = 0;
 
   if (totalCredit > 0) {
     keySource = 'system';
     creditUsed = 1;
-    consumeCredit(user.id, 1);
+    if (subCredit > 0) {
+      consumeCredit(user.id, 1);
+    } else {
+      db.prepare('UPDATE users SET current_credit = current_credit - 1, updated_at = ? WHERE id = ?').run(new Date().toISOString(), user.id);
+    }
   } else if (ents.byok) {
     keySource = 'byok';
   } else if (ents.duration) {
