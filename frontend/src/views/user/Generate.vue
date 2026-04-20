@@ -772,11 +772,108 @@
 
           <div class="mt-5">
             <button
-              @click="selectedPackage && handlePurchase(selectedPackage.id)"
-              :disabled="!selectedPackage || purchasing"
+              @click="selectedPackage && openPaymentStep()"
+              :disabled="!selectedPackage"
               class="w-full py-2.5 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {{ purchasing ? 'Processing...' : (creditModalType === 'subscribe' ? 'Subscribe Now' : 'Add Credits') }}
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Payment Modal -->
+    <transition name="slide-up">
+      <div v-if="showPaymentModal" class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" @click="closePaymentModal">
+        <div class="bg-white rounded-xl max-w-lg w-full p-6" @click.stop>
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <h3 class="text-base font-semibold text-gray-900">Choose Payment Method</h3>
+              <p class="text-xs text-gray-400 mt-0.5">{{ selectedPackage?.name }} · {{ formatCurrency(selectedPackage?.priceAmount || 0) }}</p>
+            </div>
+            <button @click="closePaymentModal" class="text-gray-400 hover:text-gray-600">
+              <XMarkIcon class="w-5 h-5" />
+            </button>
+          </div>
+
+          <!-- Coupon Code -->
+          <div class="mb-4">
+            <label class="block text-xs font-medium text-gray-500 mb-1.5">Coupon Code <span class="text-gray-400">(Optional)</span></label>
+            <div class="flex gap-2">
+              <input v-model="couponCode" type="text" placeholder="Enter code" class="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 uppercase" @keyup.enter="applyCoupon" />
+              <button @click="applyCoupon" :disabled="!couponCode || applyingCoupon" class="px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors disabled:opacity-50">
+                {{ applyingCoupon ? '...' : 'Apply' }}
+              </button>
+            </div>
+            <p v-if="couponError" class="text-xs text-rose-500 mt-1">{{ couponError }}</p>
+            <div v-if="couponApplied" class="flex items-center gap-2 mt-2 p-2 bg-emerald-50 rounded-lg">
+              <CheckCircleIcon class="w-4 h-4 text-emerald-600" />
+              <span class="text-xs text-emerald-700">Discount: {{ formatCurrency(couponDiscount) }} saved!</span>
+            </div>
+          </div>
+
+          <!-- Loading payment methods -->
+          <div v-if="loadingMethods" class="flex items-center justify-center py-8">
+            <svg class="animate-spin h-5 w-5 text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="ml-2 text-sm text-gray-400">Loading payment methods...</span>
+          </div>
+
+          <!-- No payment methods -->
+          <div v-else-if="paymentMethods.length === 0" class="text-center py-8">
+            <CreditCardIcon class="w-10 h-10 text-gray-200 mx-auto mb-3" />
+            <p class="text-sm text-gray-400">No payment methods available</p>
+          </div>
+
+          <!-- Payment methods list -->
+          <div v-else class="space-y-3 mb-5">
+            <div
+              v-for="method in paymentMethods"
+              :key="method.id"
+              class="border rounded-xl p-4 cursor-pointer transition-all duration-150"
+              :class="selectedPaymentMethod?.id === method.id
+                ? 'border-gray-900 bg-gray-50 ring-1 ring-gray-900'
+                : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50/50'"
+              @click="selectedPaymentMethod = method"
+            >
+              <div class="flex items-start gap-3">
+                <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5"
+                  :class="selectedPaymentMethod?.id === method.id ? 'border-gray-900' : 'border-gray-300'">
+                  <div v-if="selectedPaymentMethod?.id === method.id" class="w-2.5 h-2.5 rounded-full bg-gray-900"></div>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center justify-between">
+                    <p class="text-sm font-medium text-gray-900">{{ method.name }}</p>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 capitalize">
+                      {{ method.type === 'bank_transfer' ? 'Bank' : method.type === 'e_wallet' ? 'E-Wallet' : method.type }}
+                    </span>
+                  </div>
+                  <div class="mt-1.5 space-y-0.5">
+                    <p v-if="method.accountNumber" class="text-xs text-gray-500 font-mono">{{ method.accountNumber }}</p>
+                    <p v-if="method.accountName" class="text-xs text-gray-400">a.n. {{ method.accountName }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex gap-3">
+            <button
+              @click="closePaymentModal"
+              class="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-150"
+            >
+              Cancel
+            </button>
+            <button
+              @click="handlePurchase"
+              :disabled="!selectedPaymentMethod || purchasing"
+              class="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {{ purchasing ? 'Processing...' : 'Continue' }}
             </button>
           </div>
         </div>
@@ -814,10 +911,19 @@ const creditsInfo = ref(null)
 const copied = ref(false)
 const compressing = ref(false) // Single mode compression indicator
 const showCreditModal = ref(false)
-const creditModalType = ref('') // 'subscribe' or 'add-credit'
+const showPaymentModal = ref(false)
+const creditModalType = ref('')
 const purchasing = ref(false)
 const availablePackages = ref([])
 const selectedPackage = ref(null)
+const paymentMethods = ref([])
+const selectedPaymentMethod = ref(null)
+const loadingMethods = ref(false)
+const couponCode = ref('')
+const couponApplied = ref(false)
+const couponDiscount = ref(0)
+const couponError = ref('')
+const applyingCoupon = ref(false)
 
 // Batch state
 const mode = ref('single')
@@ -1554,17 +1660,65 @@ const openAddCreditModal = async () => {
   showCreditModal.value = true
 }
 
-const handlePurchase = async (packageId) => {
+const handlePurchase = async () => {
+  if (!selectedPackage.value || !selectedPaymentMethod.value) return
   purchasing.value = true
   try {
-    await userService.createOrder(packageId)
+    const order = await userService.createOrder(selectedPackage.value.id, selectedPaymentMethod.value.id, couponApplied.value ? couponCode.value : null)
+    showPaymentModal.value = false
     showCreditModal.value = false
-    router.push('/user/orders')
+    router.push(`/user/orders/${order.id}`)
   } catch (error) {
     console.error('Failed to create order:', error)
     alert('Failed to create order. Please try again.')
   } finally {
     purchasing.value = false
+  }
+}
+
+const openPaymentStep = async () => {
+  showCreditModal.value = false
+  showPaymentModal.value = true
+  selectedPaymentMethod.value = null
+  couponCode.value = ''
+  couponApplied.value = false
+  couponDiscount.value = 0
+  couponError.value = ''
+  if (paymentMethods.value.length === 0) {
+    loadingMethods.value = true
+    try {
+      paymentMethods.value = await userService.getPaymentMethods()
+    } catch (error) {
+      console.error('Failed to load payment methods:', error)
+    } finally {
+      loadingMethods.value = false
+    }
+  }
+}
+
+const closePaymentModal = () => {
+  showPaymentModal.value = false
+  selectedPaymentMethod.value = null
+  couponCode.value = ''
+  couponApplied.value = false
+  couponDiscount.value = 0
+  couponError.value = ''
+}
+
+const applyCoupon = async () => {
+  if (!couponCode.value || !selectedPackage.value) return
+  applyingCoupon.value = true
+  couponError.value = ''
+  couponApplied.value = false
+  couponDiscount.value = 0
+  try {
+    const res = await userService.validateCoupon(couponCode.value, selectedPackage.value.id)
+    couponApplied.value = true
+    couponDiscount.value = res.discountAmount
+  } catch (error) {
+    couponError.value = error.response?.data?.message || error.message || 'Invalid coupon'
+  } finally {
+    applyingCoupon.value = false
   }
 }
 
